@@ -233,3 +233,46 @@ describe('setTransform', () => {
     expect(spyOnAssert).toHaveBeenCalledWith(false, 'Screen rotation not set to 0, 90, 180, or 270. Treating as 0.');
   });
 });
+describe('validateVolume', () => {
+  it('accepts finite numbers in [0, 1]', () => {
+    ['0', '0.25', '1', ' 0.5 '].forEach(x => {
+      const r = validateVolume(x);
+      expect(r.ok).toBe(true);
+      expect(r.value).toBe(Number(x));
+    });
+  });
+
+  it('rejects out-of-range values with an error', () => {
+    ['-0.1', '1.5', '-1', '2'].forEach(x => {
+      const r = validateVolume(x);
+      expect(r.ok).toBe(false);
+      expect(r.error).toContain('between 0 and 1');
+    });
+  });
+
+  it('rejects non-numeric values with an error', () => {
+    ['', 'abc', 'NaN', 'Infinity'].forEach(x => {
+      const r = validateVolume(x);
+      expect(r.ok).toBe(false);
+      expect(r.error).toContain('must be a number');
+    });
+  });
+});
+
+describe('audio channel options', () => {
+  it('round-trips per-channel volume/mute through packOptions/unpackOptions', () => {
+    const emulator = {
+      audioVolume: 0.25,
+      audioVolumeLeft: 0.7,
+      audioVolumeRight: 0.3,
+      audioMuteLeft: true,
+      audioMuteRight: false,
+    };
+    const restored = {};
+    unpackOptions(restored, packOptions(emulator));
+    expect(restored.audioVolumeLeft).toBe(0.7);
+    expect(restored.audioVolumeRight).toBe(0.3);
+    expect(restored.audioMuteLeft).toBe(true);
+    expect(restored.audioMuteRight).toBe(false);
+  });
+});

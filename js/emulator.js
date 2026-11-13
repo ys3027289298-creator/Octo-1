@@ -226,6 +226,10 @@ function Emulator() {
 	this.numericFormatStr   = "default";
 	this.fontStyle          = 'octo';
 	this.audioVolume        = 0.25;
+	this.audioVolumeLeft    = 1;
+	this.audioVolumeRight   = 1;
+	this.audioMuteLeft      = false;
+	this.audioMuteRight     = false;
 
 	// interpreter state
 	this.p  = [[],[]];  // pixels

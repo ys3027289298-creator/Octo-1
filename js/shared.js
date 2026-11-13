@@ -31,6 +31,10 @@ const optionFlags = [
 	"logicQuirks",
 	"fontStyle",
 	"audioVolume",
+	"audioVolumeLeft",
+	"audioVolumeRight",
+	"audioMuteLeft",
+	"audioMuteRight",
 ]
 function unpackOptions(emulator, options) {
 	optionFlags.forEach(x => { if (x in options) emulator[x] = options[x] })
@@ -191,9 +195,53 @@ AudioBuffer.prototype.dequeue = function(duration) {
 var FREQ = 4000;
 var PITCH_BIAS = 64;
 
+// Time constant (seconds) for smoothed gain changes. Volume and mute
+// transitions follow an exponential approach (setTargetAtTime) instead of
+// stepping, so toggling them never produces a discontinuity ("click").
+var AUDIO_RAMP_TAU = 0.02;
+
+// Validate a user-supplied volume level. Returns {ok:true, value} for a
+// finite number in [0,1], otherwise {ok:false, error}.
+function validateVolume(raw) {
+	const text = ('' + raw).trim();
+	const value = text === '' ? NaN : Number(text);
+	if (!isFinite(value)) {
+		return { ok: false, error: 'Volume must be a number, got "' + raw + '".' };
+	}
+	if (value < 0 || value > 1) {
+		return { ok: false, error: 'Volume must be between 0 and 1, got ' + value + '.' };
+	}
+	return { ok: true, value: value };
+}
+
 function audioEnable() {
 	// this will only work if called directly from a user-generated input handler:
 	if (audio && audio.state == 'suspended') audio.resume()
+}
+
+// Push the emulator's master volume and per-channel volume/mute settings
+// into the audio graph. Changes are ramped (never stepped) to avoid clicks;
+// pass immediate=true when (re)building the graph, before any signal flows.
+function applyAudioChannels(emulator, immediate) {
+	if (!audio || !audioNode) { return; }
+	const now = audio.currentTime;
+	const stages = [
+		[audioNode.gain,       emulator.audioVolume],
+		[audioNode.gainLeft,   emulator.audioMuteLeft  ? 0 : emulator.audioVolumeLeft],
+		[audioNode.gainRight,  emulator.audioMuteRight ? 0 : emulator.audioVolumeRight],
+	];
+	stages.forEach(function(stage) {
+		const param = stage[0].gain, target = stage[1];
+		if (immediate) {
+			param.value = target;
+		}
+		else {
+			const current = param.value;
+			param.cancelScheduledValues(now);
+			param.setValueAtTime(current, now);
+			param.setTargetAtTime(target, now, AUDIO_RAMP_TAU);
+		}
+	});
 }
 
 function audioSetup(emulator) {
@@ -213,6 +261,11 @@ function audioSetup(emulator) {
 		audioNode = audio.createScriptProcessor(bufferSize, 1, 1);
 		audioNode.gain = audio.createGain();
 		audioNode.gain.gain.value = emulator.audioVolume
+		// fan the mono signal out to independent left/right gain stages,
+		// then re-combine into a stereo stream:
+		audioNode.gainLeft  = audio.createGain();
+		audioNode.gainRight = audio.createGain();
+		audioNode.merger    = audio.createChannelMerger(2);
 		audioNode.onaudioprocess = function(audioProcessingEvent) {
 			var outputBuffer = audioProcessingEvent.outputBuffer;
 			var outputData = outputBuffer.getChannelData(0);
@@ -242,7 +295,12 @@ function audioSetup(emulator) {
 		}
 		audioData = [];
 		audioNode.connect(audioNode.gain);
-		audioNode.gain.connect(audio.destination);
+		audioNode.gain.connect(audioNode.gainLeft);
+		audioNode.gain.connect(audioNode.gainRight);
+		audioNode.gainLeft.connect(audioNode.merger, 0, 0);
+		audioNode.gainRight.connect(audioNode.merger, 0, 1);
+		audioNode.merger.connect(audio.destination);
+		applyAudioChannels(emulator, true);
 
 		XOAudio = new AudioControl();
 		emulator.buzzTimer  = _ => XOAudio.setTimer(_);
@@ -256,6 +314,10 @@ function stopAudio() {
 	if (!audio) { return; }
 	if (audioNode) {
 		audioNode.disconnect();
+		audioNode.gain.disconnect();
+		audioNode.gainLeft.disconnect();
+		audioNode.gainRight.disconnect();
+		audioNode.merger.disconnect();
 		audioNode = null;
 	}
 	audioData = [];

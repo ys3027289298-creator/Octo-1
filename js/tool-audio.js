@@ -124,16 +124,50 @@ document.getElementById('audio-generate').onclick = _ => {
 * Main
 **/
 
-const audioVolume = document.getElementById('audio-gain')
-audioVolume.onchange = _ => {
-	emulator.audioVolume=Math.max(0,Math.min(+audioVolume.value))
-	saveLocalOptions()
+const audioError = document.getElementById('audio-error')
+function bindVolume(input, key) {
+	input.onchange = _ => {
+		const r = validateVolume(input.value)
+		if (!r.ok) {
+			audioError.innerHTML = r.error
+			input.value = emulator[key]
+			return
+		}
+		audioError.innerHTML = ''
+		emulator[key] = r.value
+		applyAudioChannels(emulator)
+		saveLocalOptions()
+	}
 }
+
+const audioVolume = document.getElementById('audio-gain')
+bindVolume(audioVolume, 'audioVolume')
+
+const audioGainLeft  = document.getElementById('audio-gain-left')
+const audioGainRight = document.getElementById('audio-gain-right')
+bindVolume(audioGainLeft,  'audioVolumeLeft')
+bindVolume(audioGainRight, 'audioVolumeRight')
+
+const audioMuteLeft  = checkBox(document.getElementById('audio-mute-left'),  emulator.audioMuteLeft,  x => {
+	emulator.audioMuteLeft  = x
+	applyAudioChannels(emulator)
+	saveLocalOptions()
+})
+const audioMuteRight = checkBox(document.getElementById('audio-mute-right'), emulator.audioMuteRight, x => {
+	emulator.audioMuteRight = x
+	applyAudioChannels(emulator)
+	saveLocalOptions()
+})
+
 function updateAudio() {
 	audioPatternEditor.refresh()
 	drawBytes(audioPatternCanvas, readPattern(audioPatternEditor))
 	const tone=audioTone()
 	drawBytes(audioToneCanvas, tone.pattern)
 	audioVolume.value=emulator.audioVolume
+	audioGainLeft.value=emulator.audioVolumeLeft
+	audioGainRight.value=emulator.audioVolumeRight
+	audioMuteLeft.setValue(emulator.audioMuteLeft)
+	audioMuteRight.setValue(emulator.audioMuteRight)
 }
 audioPatternEditor.on('change', updateAudio)
