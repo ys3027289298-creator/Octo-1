@@ -11,6 +11,7 @@
   <script src='js/compiler.js'></script>
   <script src='js/decompiler.js'></script>
   <script src='js/shared.js'></script>
+  <script src='js/display.js'></script>
   <script src='js/util.js'></script>
   <script src='js/sharing.js'></script>
   <script src='js/input.js'></script>
@@ -272,6 +273,8 @@
         <img src='images/close.png'    title='close'         id='run-close'   >
         <img src='images/record.png'   title='record gif'    id='run-record'  >
         <img src='images/continue.png' title='continue'      id='run-continue'>
+        <span class='run-display-toggle' id='run-integer' title='integer-scale fullscreen (f)'>Integer</span>
+        <span class='run-display-toggle' id='run-stretch' title='stretch fullscreen (g)'>Stretch</span>
       </div>
       <div id='debugger'></div>
       <div id='monitor'>Monitor goes here.</div>
@@ -613,6 +616,33 @@ input:focus { outline: none; }
 #run-controls { margin: 20px; }
 #run-controls img { margin-right: 10px; cursor: pointer; }
 #run-controls img:active { opacity: 0.5; }
+.run-display-toggle {
+  margin-right: 10px;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px 6px;
+  border: 1px solid white;
+  border-radius: 3px;
+  color: white;
+  text-shadow: black 0 0 5px;
+  user-select: none;
+  vertical-align: middle;
+}
+.run-display-toggle:active { opacity: 0.5; }
+#run-cover.display-fullscreen #run-container {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+#run-cover.display-fullscreen canvas {
+  image-rendering: crisp-edges;
+  image-rendering: pixelated;
+}
 #debugger { font-family: monospace; margin-left: 20px; text-shadow: black 0 0 5px; }
 #debugger .debug-context, #debugger .debug-profile { font-family: monospace; color: white; }
 #debugger .debug-context tr.current { text-decoration: underline; font-weight: bold; }
@@ -880,6 +910,8 @@ showManual.onclick = _ => {
 
 document.getElementById('run-close'   ).onclick = _ => stopRom()
 document.getElementById('run-continue').onclick = _ => clearBreakpoint()
+document.getElementById('run-integer' ).onclick = _ => toggleDisplayInteger()
+document.getElementById('run-stretch' ).onclick = _ => toggleDisplayStretch()
 
 window.onload = loadExamples
 
@@ -906,6 +938,8 @@ window.onkeyup = event => {
   }
   if (event.key == 'p') { haltProfiler('profiler') }
   if (event.key == 'm') { monitoring = !monitoring; setVisible(document.getElementById('monitor'),monitoring) }
+  if (event.key == 'f') { toggleDisplayInteger() }
+  if (event.key == 'g') { toggleDisplayStretch() }
   if (emulator.breakpoint) {
     if (event.key == 'o') { resume(); emulator.dt = emulator.st = 0; emulator.tick(); renderDisplay(emulator); haltBreakpoint('single step')}
     if (event.key == 'u') { resume(); const l = emulator.r.length; if (l>0) { emulator.stack_breakpoint = l-1; clearBreakpoint() } } // step out
@@ -997,6 +1031,8 @@ function runRom(rom) {
   resetLinter()
   runCover.style.backgroundColor = emulator.quietColor
   setRenderTarget(5, 'target')
+  installDisplayHandlers()
+  resetDisplayMode()
 
   var frameTime = 1000/60;
   var last = Date.now(), diff, origin = last+frameTime/2;
@@ -1033,6 +1069,7 @@ function runRom(rom) {
 
 function stopRom() {
   emulator.halted = true
+  resetDisplayMode()
   setVisible(runCover, false)
   window.clearInterval(intervalHandle)
   intervalHandle = null
