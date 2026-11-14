@@ -10,7 +10,15 @@ const spriteClear   = document.getElementById('sprite-clear')
 const spritePalette = radioBar(document.getElementById('sprite-palette'), 1, x => {})
 const spriteEditor  = textBox(document.getElementById('sprite-editor'), false, '')
 
-spriteClear.onclick = _ => { spritePixels = []; updateSpriteEditor() }
+spriteClear.onclick = _ => {
+  spritePixels = []
+  spriteFrames = []
+  importedSpriteDoc = null
+  spriteFrameBox.value = '0'
+  refreshFrameBox()
+  reportSpriteIo('', false)
+  updateSpriteEditor()
+}
 function spriteLength() { return (sprite16.getValue() ? 32 : 15) * (spriteColor.getValue() ? 2 : 1) }
 function spriteDim(big) { return big ? { rows:16, cols:16 } : { rows:15, cols:8 } }
 
@@ -156,4 +164,162 @@ function updateSpriteEditor() {
   clampSpriteData()
   showHex()
   showSprite()
+}
+
+/**
+* Sprite Import/Export
+*
+* The editor itself edits one sprite at a time. To support multi-frame
+* atlases without changing the existing editor/save behavior, exported
+* frames are collected in `spriteFrames`: exporting a frame appends the
+* current editor bytes, and importing an atlas lets the user walk frames
+* by number. All heavy lifting (validation, palette, byte layout) lives
+* in the DOM-independent sprite-io.js module.
+**/
+
+const spriteFileInput = document.getElementById('sprite-fileinput')
+const spriteFrameBox  = document.getElementById('sprite-frame-number')
+const spriteIoMessage = document.getElementById('sprite-io-msg')
+
+var spriteFrames = []
+var importedSpriteDoc = null
+
+function currentPalette() {
+  return {
+    backgroundColor: emulator.backgroundColor,
+    fillColor:       emulator.fillColor,
+    fillColor2:      emulator.fillColor2,
+    blendColor:      emulator.blendColor,
+  }
+}
+function activeSpriteLength() { return spriteLength() }
+function snapshotSprite() {
+  clampSpriteData()
+  return spritePixels.slice(0, activeSpriteLength())
+}
+function reportSpriteIo(message, isError) {
+  spriteIoMessage.innerText = message
+  spriteIoMessage.classList.toggle('error', !!isError)
+}
+function frameCount() {
+  return importedSpriteDoc ? importedSpriteDoc.frames.length : spriteFrames.length
+}
+function refreshFrameBox() {
+  spriteFrameBox.max = String(Math.max(0, frameCount() - 1))
+}
+
+document.getElementById('sprite-export-frame').onclick = _ => {
+  try {
+    const doc = exportSprite(
+      spritePixels,
+      sprite16.getValue(),
+      spriteColor.getValue(),
+      currentPalette()
+    )
+    saveText('sprite-frame.octosprite.json', serializeSprite(doc))
+    reportSpriteIo('Exported one ' + doc.geometry.width + 'x' + doc.geometry.height +
+      ' frame with palette index 0 (transparent) and bit planes preserved.', false)
+  }
+  catch (error) {
+    reportSpriteIo('Export failed: ' + error.message, true)
+  }
+}
+
+document.getElementById('sprite-export-atlas').onclick = _ => {
+  try {
+    if (spriteFrames.length == 0) {
+      throw new Error('atlas is empty - use "Add To Atlas" to collect frames first')
+    }
+    const doc = exportSpriteAtlas(
+      spriteFrames,
+      sprite16.getValue(),
+      spriteColor.getValue(),
+      currentPalette()
+    )
+    saveText('sprite-atlas.octosprite.json', serializeSprite(doc))
+    reportSpriteIo('Exported atlas with ' + doc.frameCount + ' frame(s).', false)
+    refreshFrameBox()
+  }
+  catch (error) {
+    reportSpriteIo('Atlas export failed: ' + error.message, true)
+  }
+}
+
+document.getElementById('sprite-atlas-add').onclick = _ => {
+  try {
+    const candidate = snapshotSprite()
+    if (spriteFrames.length > 0) {
+      const previous = spriteFrames[spriteFrames.length - 1]
+      if (previous.length != candidate.length) {
+        throw new Error('all atlas frames must share the same size (8x15 or 16x16) and color mode')
+      }
+    }
+    spriteFrames.push(candidate)
+    refreshFrameBox()
+    reportSpriteIo('Frame ' + spriteFrames.length + ' added to atlas (' +
+      spriteFrames.length + ' frame(s) buffered).', false)
+  }
+  catch (error) {
+    reportSpriteIo(error.message, true)
+  }
+}
+
+document.getElementById('sprite-import').onclick = _ => spriteFileInput.click()
+
+function loadSpriteDocument(text) {
+  importedSpriteDoc = deserializeSprite(text)
+  spriteFrames = []
+  refreshFrameBox()
+  applyImportedFrame(0)
+}
+
+function applyImportedFrame(frameNumber) {
+  const result = importSpriteFrame(importedSpriteDoc, frameNumber)
+  sprite16.setValue(result.big)
+  spriteColor.setValue(result.color)
+  spritePixels = Array.from(result.bytes)
+  clampSpriteData()
+  Object.keys(result.palette).forEach(key => { emulator[key] = result.palette[key] })
+  saveLocalOptions()
+  updateColor()
+  updateSpriteEditor()
+  reportSpriteIo('Imported frame ' + frameNumber + ' of ' +
+    importedSpriteDoc.frames.length + '; palette indices and bit planes restored.', false)
+}
+
+spriteFrameBox.onchange = _ => {
+  if (!importedSpriteDoc) {
+    reportSpriteIo('Import an .octosprite.json file before selecting a frame.', true)
+    spriteFrameBox.value = '0'
+    return
+  }
+  const requested = parseInt(spriteFrameBox.value, 10)
+  try {
+    if (!Number.isInteger(requested) || requested < 0 ||
+        requested >= importedSpriteDoc.frames.length) {
+      throw new Error('invalid frame number: ' + spriteFrameBox.value +
+        ' (valid range is 0..' + (importedSpriteDoc.frames.length - 1) + ')')
+    }
+    applyImportedFrame(requested)
+  }
+  catch (error) {
+    reportSpriteIo(error.message, true)
+  }
+}
+
+spriteFileInput.onchange = _ => {
+  const file = spriteFileInput.files[0]
+  if (!file) return
+  const reader = new FileReader()
+  reader.onload = _ => {
+    try {
+      loadSpriteDocument(reader.result)
+      spriteFrameBox.value = '0'
+    }
+    catch (error) {
+      reportSpriteIo('Import failed: ' + error.message, true)
+    }
+    spriteFileInput.value = ''
+  }
+  reader.readAsText(file)
 }

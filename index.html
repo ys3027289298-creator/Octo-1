@@ -82,6 +82,18 @@
           <canvas id='sprite-draw'></canvas>
         </div>
         <div id='sprite-editor'></div>
+        <div class='buttonbar'>
+          <div id='sprite-export-frame'>Export Frame</div>
+          <div id='sprite-export-atlas'>Export Atlas</div>
+          <div id='sprite-atlas-add'>Add To Atlas</div>
+          <div id='sprite-import'>Import...</div>
+        </div>
+        <input type='file' id='sprite-fileinput' style='display:none'>
+        <div id='sprite-io-row'>
+          Frame:
+          <input id='sprite-frame-number' type='number' min='0' value='0' size='4'>
+          <span id='sprite-io-msg'></span>
+        </div>
       </div>
 
       <div data-panel='audio' class='tool-header'>Audio Editor</div>
@@ -568,6 +580,10 @@ input:focus { outline: none; }
 
 #sprite-palette { margin-top: 10px; display: none; }
 #sprite-editor .CodeMirror { height: 115px; }
+#sprite-io-row { margin-top: 8px; font-size: 12px; display: flex; align-items: center; gap: 6px; }
+#sprite-io-row input { width: 50px; }
+#sprite-io-msg { color: #202020; word-break: break-word; }
+#sprite-io-msg.error { color: darkred; font-weight: bold; }
 #audio-pattern-editor .CodeMirror { height: 40px; }
 #audio-tone-group { display: flex; flex-direction: row; margin-top: 10px; align-items: center; }
 #audio-tone-group .pair { margin-right: 15px; }
@@ -699,6 +715,7 @@ input:focus { outline: none; }
 
 <script src='js/debugger.js'></script>
 <script src='js/recording.js'></script>
+<script src='js/sprite-io.js'></script>
 <script src='js/tool-sprite.js'></script>
 <script src='js/tool-audio.js'></script>
 <script src='js/tool-binary.js'></script>
